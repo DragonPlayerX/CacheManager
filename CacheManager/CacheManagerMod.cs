@@ -17,14 +17,14 @@ using ABI.CCK.Scripts;
 using CacheManager;
 using CacheManager.Tasks;
 
-[assembly: MelonInfo(typeof(CacheManagerMod), "CacheManager", "1.0.0", "DragonPlayer", "https://github.com/DragonPlayerX/CacheManager")]
+[assembly: MelonInfo(typeof(CacheManagerMod), "CacheManager", "1.0.1", "DragonPlayer", "https://github.com/DragonPlayerX/CacheManager")]
 [assembly: MelonGame("Alpha Blend Interactive", "ChilloutVR")]
 
 namespace CacheManager
 {
     public class CacheManagerMod : MelonMod
     {
-        public static readonly string Version = "1.0.0";
+        public static readonly string Version = "1.0.1";
 
         public static readonly string[] CacheFolders = new string[] { "Avatars", "Worlds", "Spawnables" };
 
