@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 using System.Reflection.Emit;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -39,7 +40,8 @@ namespace CacheManager
         private static MethodInfo getUnityDataPathMethod;
         private static MethodInfo getCachePathMethod;
         private static MethodInfo checkAvailabilityMethod;
-        private static FieldInfo downloadIsActiveField;
+        private static MethodInfo decrementMethod;
+        private static FieldInfo simulDownloadsField;
 
         private static Stopwatch stopwatch = new Stopwatch();
 
@@ -56,7 +58,8 @@ namespace CacheManager
             getUnityDataPathMethod = typeof(Application).GetMethod("get_dataPath", BindingFlags.Public | BindingFlags.Static);
             getCachePathMethod = typeof(CacheManagerMod).GetMethod(nameof(GetCachePath), BindingFlags.NonPublic | BindingFlags.Static);
             checkAvailabilityMethod = typeof(CVRDownloadManager).GetMethod("CheckAvailability", BindingFlags.NonPublic | BindingFlags.Instance);
-            downloadIsActiveField = typeof(CVRDownloadManager).GetField("_downloadIsActive", BindingFlags.NonPublic | BindingFlags.Instance);
+            decrementMethod = typeof(Interlocked).GetMethods(BindingFlags.Public | BindingFlags.Static).FirstOrDefault(method => method.Name.Equals(nameof(Interlocked.Decrement)) && method.ReturnType == typeof(int));
+            simulDownloadsField = typeof(CVRDownloadManager).GetField("_simulDownloads", BindingFlags.NonPublic | BindingFlags.Instance);
 
             HarmonyInstance.Patch(typeof(DownloadManagerHelperFunctions).GetMethod(nameof(DownloadManagerHelperFunctions.GetAppDatapath)),
                 new HarmonyMethod(typeof(CacheManagerMod).GetMethod(nameof(CachePathPatch), BindingFlags.NonPublic | BindingFlags.Static)));
@@ -123,20 +126,22 @@ namespace CacheManager
 
         private static IEnumerable<CodeInstruction> DownloadFileTranspiler(IEnumerable<CodeInstruction> instructions)
         {
-            CodeInstruction lastInstruction = null;
             foreach (CodeInstruction instruction in instructions)
             {
-                if (instruction.StoresField(downloadIsActiveField) && (lastInstruction?.opcode.Equals(OpCodes.Ldc_I4_0) ?? false))
-                    yield return new CodeInstruction(OpCodes.Call, typeof(CacheManagerMod).GetMethod(nameof(CheckCache), BindingFlags.NonPublic | BindingFlags.Static));
-                else
-                    yield return instruction;
+                yield return instruction;
 
-                lastInstruction = instruction;
+                if (instruction.Calls(decrementMethod))
+                    yield return new CodeInstruction(OpCodes.Call, typeof(CacheManagerMod).GetMethod(nameof(CheckCache), BindingFlags.NonPublic | BindingFlags.Static));
             }
         }
 
         private static void CheckCache()
         {
+            if (((int)simulDownloadsField.GetValue(CVRDownloadManager.Instance)) != 0)
+                return;
+
+            simulDownloadsField.SetValue(CVRDownloadManager.Instance, int.MaxValue);
+
             Task.Run(() =>
             {
                 if (MaxSizeGB.Value <= 0)
@@ -176,7 +181,7 @@ namespace CacheManager
             {
                 await TaskProvider.YieldToMainThread();
 
-                downloadIsActiveField.SetValue(CVRDownloadManager.Instance, false);
+                simulDownloadsField.SetValue(CVRDownloadManager.Instance, 0);
                 checkAvailabilityMethod.Invoke(CVRDownloadManager.Instance, new object[0]);
             });
         }
